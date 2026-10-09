@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ensureAnonymousLearnerSession, listSubmittedResponseRows, loadPublishedWorksheet, saveOnlineResponse, uniqueSubmittedResponseRows, type OnlineResponseRow } from './onlineRepository'
+import { ensureAnonymousLearnerSession, getPublishedWorksheetJoinErrorMessage, listSubmittedResponseRows, loadPublishedWorksheet, PublishedWorksheetLoadError, saveOnlineResponse, uniqueSubmittedResponseRows, type OnlineResponseRow } from './onlineRepository'
 import { requireSupabase } from './supabase'
 import type { WorksheetResponse } from './types'
 
@@ -78,6 +78,54 @@ describe('online worksheet repository', () => {
     expect(rpc).toHaveBeenCalledWith('get_published_worksheet_by_code', { lookup_public_code: 'ABC12345' })
     expect(single).toHaveBeenCalledTimes(1)
     expect(from).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the legacy published-row lookup when the RPC is not installed', async () => {
+    const workbook = {
+      id: 'worksheet-id',
+      public_code: 'ABC12345',
+      status: 'published',
+      definition: { id: 'worksheet', version: 1, title: 'Shared workbook', pages: [] },
+    }
+    const rpcSingle = vi.fn().mockResolvedValue({
+      data: null,
+      error: { code: 'PGRST202', message: 'Could not find the function public.get_published_worksheet_by_code in the schema cache' },
+    })
+    const legacyBuilder = {
+      select: vi.fn(() => legacyBuilder),
+      eq: vi.fn(() => legacyBuilder),
+      single: vi.fn().mockResolvedValue({ data: workbook, error: null }),
+    }
+    const from = vi.fn().mockReturnValue(legacyBuilder)
+
+    vi.mocked(requireSupabase).mockReturnValue({
+      auth: { getSession: vi.fn().mockResolvedValue({ data: { session: { user: { id: 'learner-id', is_anonymous: true } } } }) },
+      rpc: vi.fn().mockReturnValue({ single: rpcSingle }),
+      from,
+    } as any)
+
+    await expect(loadPublishedWorksheet(' abc12345 ')).resolves.toBe(workbook)
+    expect(from).toHaveBeenCalledWith('worksheets')
+    expect(legacyBuilder.eq).toHaveBeenNthCalledWith(1, 'public_code', 'ABC12345')
+    expect(legacyBuilder.eq).toHaveBeenNthCalledWith(2, 'status', 'published')
+  })
+
+  it('does not downgrade to the legacy lookup for unrelated RPC failures', async () => {
+    const from = vi.fn()
+    vi.mocked(requireSupabase).mockReturnValue({
+      auth: { getSession: vi.fn().mockResolvedValue({ data: { session: { user: { id: 'learner-id', is_anonymous: true } } } }) },
+      rpc: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: null, error: { code: '42501', message: 'permission denied' } }) }),
+      from,
+    } as any)
+
+    await expect(loadPublishedWorksheet('ABC12345')).rejects.toMatchObject({ kind: 'authentication' })
+    expect(from).not.toHaveBeenCalled()
+  })
+
+  it('distinguishes invalid codes from service and connection failures', () => {
+    expect(getPublishedWorksheetJoinErrorMessage(new PublishedWorksheetLoadError('not-found', 'missing'))).toContain('could not find')
+    expect(getPublishedWorksheetJoinErrorMessage(new PublishedWorksheetLoadError('configuration', 'migration missing'))).toContain('needs an update')
+    expect(getPublishedWorksheetJoinErrorMessage(new TypeError('Failed to fetch'))).toContain('connection')
   })
 })
 

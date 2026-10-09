@@ -60,7 +60,7 @@ describe('online workbook join routing', () => {
   it('clears the previous workbook when the join code changes in the same tab', async () => {
     mockedLoadPublishedWorksheet.mockImplementation((publicCode: string) => {
       if (publicCode === 'CODE1') return Promise.resolve(workbook('CODE1', 'First workbook'))
-      return Promise.reject(new Error('not found'))
+      return Promise.reject({ code: 'PGRST116', message: 'not found' })
     })
 
     render(createElement(

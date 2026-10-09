@@ -29,6 +29,59 @@ export interface OnlineResponseRow {
 
 const SUBMITTED_RESPONSES_PAGE_SIZE = 1000
 
+export type PublishedWorksheetLoadErrorKind = 'not-found' | 'authentication' | 'network' | 'configuration' | 'unknown'
+
+export class PublishedWorksheetLoadError extends Error {
+  readonly kind: PublishedWorksheetLoadErrorKind
+
+  constructor(kind: PublishedWorksheetLoadErrorKind, message: string, options?: { cause?: unknown }) {
+    super(message, options)
+    this.name = 'PublishedWorksheetLoadError'
+    this.kind = kind
+  }
+}
+
+function getSupabaseErrorDetails(error: unknown) {
+  if (!error || typeof error !== 'object') return { code: '', message: '', status: undefined as number | undefined }
+  const candidate = error as { code?: unknown; message?: unknown; status?: unknown }
+  return {
+    code: typeof candidate.code === 'string' ? candidate.code : '',
+    message: typeof candidate.message === 'string' ? candidate.message : '',
+    status: typeof candidate.status === 'number' ? candidate.status : undefined,
+  }
+}
+
+function isMissingPublishedWorksheetRpc(error: unknown) {
+  const { code, message } = getSupabaseErrorDetails(error)
+  return code === 'PGRST202'
+    || code === '42883'
+    || /get_published_worksheet_by_code/i.test(message) && /not find|does not exist|schema cache/i.test(message)
+}
+
+function classifyPublishedWorksheetError(error: unknown): PublishedWorksheetLoadErrorKind {
+  const { code, message, status } = getSupabaseErrorDetails(error)
+  if (code === 'PGRST116') return 'not-found'
+  if (code === '42501' || code === 'PGRST301' || status === 401 || status === 403) return 'authentication'
+  if (/anonymous sign-?ins? (?:are )?disabled|anonymous provider is disabled|not authorized|jwt/i.test(message)) return 'authentication'
+  if (error instanceof TypeError || /failed to fetch|network|load failed/i.test(message)) return 'network'
+  return 'unknown'
+}
+
+function asPublishedWorksheetError(error: unknown, fallbackKind: PublishedWorksheetLoadErrorKind = 'unknown') {
+  if (error instanceof PublishedWorksheetLoadError) return error
+  const kind = classifyPublishedWorksheetError(error)
+  return new PublishedWorksheetLoadError(kind === 'unknown' ? fallbackKind : kind, 'Could not load the published workbook.', { cause: error })
+}
+
+export function getPublishedWorksheetJoinErrorMessage(error: unknown) {
+  const kind = error instanceof PublishedWorksheetLoadError ? error.kind : classifyPublishedWorksheetError(error)
+  if (kind === 'not-found') return 'We could not find a published workbook with that code. Check the code and try again.'
+  if (kind === 'authentication') return 'We could not start a learner session. Refresh and try again, or ask your teacher to check learner access.'
+  if (kind === 'network') return 'We could not connect to Workbooks. Check your connection and try again.'
+  if (kind === 'configuration') return 'This workbook service needs an update. Your code may still be valid, so please tell your teacher.'
+  return 'We could not open this workbook right now. Your code may still be valid. Please try again.'
+}
+
 function createPublicCode(length = 8) {
   const alphabet = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'
   const bytes = crypto.getRandomValues(new Uint8Array(length))
@@ -143,13 +196,35 @@ export function uniqueSubmittedResponseRows(rows: OnlineResponseRow[]) {
 
 export async function loadPublishedWorksheet(publicCode: string) {
   const client = requireSupabase()
-  await ensureAnonymousLearnerSession()
-  const { data, error } = await client
-    .rpc('get_published_worksheet_by_code', { lookup_public_code: publicCode.trim().toUpperCase() })
+  const normalizedCode = publicCode.trim().toUpperCase()
+
+  try {
+    await ensureAnonymousLearnerSession()
+  } catch (error) {
+    throw asPublishedWorksheetError(error, 'authentication')
+  }
+
+  const rpcResult = await client
+    .rpc('get_published_worksheet_by_code', { lookup_public_code: normalizedCode })
     .single<OnlineWorksheetRow>()
 
-  if (error) throw error
-  return data
+  if (!rpcResult.error) return rpcResult.data
+  if (!isMissingPublishedWorksheetRpc(rpcResult.error)) throw asPublishedWorksheetError(rpcResult.error)
+
+  // Compatibility path for deployments whose frontend is newer than their Supabase schema.
+  // Remove this after every deployed database has the code-gated RPC migration.
+  const legacyResult = await client
+    .from('worksheets')
+    .select('*')
+    .eq('public_code', normalizedCode)
+    .eq('status', 'published')
+    .single<OnlineWorksheetRow>()
+
+  if (legacyResult.error) {
+    const kind = classifyPublishedWorksheetError(legacyResult.error)
+    throw asPublishedWorksheetError(legacyResult.error, kind === 'unknown' ? 'configuration' : kind)
+  }
+  return legacyResult.data
 }
 
 async function loadParticipantResponseForSession(worksheetId: string, participantId: string) {

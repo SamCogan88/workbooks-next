@@ -68,7 +68,7 @@ import { formatDocumentTitle, getRouteDocumentTitle } from './lib/documentTitle'
 import { updateBlockConfigWithOptionReferences } from './lib/optionReferenceIntegrity'
 import { isResponseJsonExportEnabled, isResponsePdfExportEnabled, shouldAutosaveOnlineResponse } from './lib/worksheetSettings'
 import { buildResponseIdStorageKey, exportResponseJson, getDefaultResponseId, getStoredSessionCreatedAt, loadSession, saveSession } from './lib/storage'
-import { listOwnedWorksheets, listSubmittedResponseRows, listSubmittedResponses, loadOwnedWorksheet, loadParticipantResponse, loadPublishedWorksheet, publishWorksheet, saveOnlineResponse, submitOnlineResponse, type OnlineResponseRow, type OnlineWorksheetRow } from './lib/onlineRepository'
+import { getPublishedWorksheetJoinErrorMessage, listOwnedWorksheets, listSubmittedResponseRows, listSubmittedResponses, loadOwnedWorksheet, loadParticipantResponse, loadPublishedWorksheet, publishWorksheet, saveOnlineResponse, submitOnlineResponse, type OnlineResponseRow, type OnlineWorksheetRow } from './lib/onlineRepository'
 import { normalizeRandomizerAnimationDuration, selectRandomItem, shuffleRandomizerItems } from './lib/randomizer'
 import { sanitizeRichTextHtml } from './lib/richTextSanitizer'
 import {
@@ -567,9 +567,9 @@ function OnlineJoinPage() {
       if (!active) return
       setWorkbook(loadedWorkbook)
       setLoading(false)
-    }).catch(() => {
+    }).catch((loadError: unknown) => {
       if (!active) return
-      setError('We could not find a published workbook with that code. Check the code and try again.')
+      setError(getPublishedWorksheetJoinErrorMessage(loadError))
       setLoading(false)
     })
 
