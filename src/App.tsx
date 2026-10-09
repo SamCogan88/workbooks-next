@@ -686,8 +686,8 @@ function TeacherDashboard({ onOpenWorkbook }: { onOpenWorkbook: (definition: Wor
   const handleWorkbookStatus = async (workbook: OnlineWorksheetRow, nextStatus: 'published' | 'archived') => {
     const isClosing = nextStatus === 'archived'
     const prompt = isClosing
-      ? `Close “${workbook.title}”? Learners will no longer be able to join with its code, but responses will be kept.`
-      : `Reopen “${workbook.title}”? Its existing join code will work again.`
+      ? `End this “${workbook.title}” session? Learners will no longer be able to join with its code, but responses will be kept.`
+      : `Reopen this “${workbook.title}” session? Its existing join code will work again.`
     if (!window.confirm(prompt)) return
     setWorkingWorkbookId(workbook.id)
     setError('')
@@ -695,7 +695,7 @@ function TeacherDashboard({ onOpenWorkbook }: { onOpenWorkbook: (definition: Wor
       const updated = await setOwnedWorksheetStatus(workbook.id, nextStatus)
       setWorkbooks((current) => current.map((item) => item.id === workbook.id ? updated : item))
     } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : `The workbook could not be ${isClosing ? 'closed' : 'reopened'}.`)
+      setError(updateError instanceof Error ? updateError.message : `The session could not be ${isClosing ? 'ended' : 'reopened'}.`)
     } finally {
       setWorkingWorkbookId('')
     }
@@ -703,7 +703,7 @@ function TeacherDashboard({ onOpenWorkbook }: { onOpenWorkbook: (definition: Wor
 
   const handleDeleteWorkbook = async (workbook: OnlineWorksheetRow, responseCount: number) => {
     const responseWarning = responseCount > 0 ? ` and its ${responseCount} learner response${responseCount === 1 ? '' : 's'}` : ''
-    if (!window.confirm(`Permanently delete “${workbook.title}”${responseWarning}? This cannot be undone.`)) return
+    if (!window.confirm(`Permanently delete this “${workbook.title}” session${responseWarning}? This cannot be undone.`)) return
     setWorkingWorkbookId(workbook.id)
     setError('')
     try {
@@ -715,7 +715,21 @@ function TeacherDashboard({ onOpenWorkbook }: { onOpenWorkbook: (definition: Wor
         return next
       })
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : 'The workbook could not be deleted.')
+      setError(deleteError instanceof Error ? deleteError.message : 'The session could not be deleted.')
+    } finally {
+      setWorkingWorkbookId('')
+    }
+  }
+
+  const handleRunNewSession = async (workbook: OnlineWorksheetRow) => {
+    setWorkingWorkbookId(workbook.id)
+    setError('')
+    try {
+      const session = await publishWorksheet(workbook.definition)
+      setWorkbooks((current) => [session, ...current])
+      setResponsesByWorkbook((current) => ({ ...current, [session.id]: [] }))
+    } catch (sessionError) {
+      setError(sessionError instanceof Error ? sessionError.message : 'A new session could not be started.')
     } finally {
       setWorkingWorkbookId('')
     }
@@ -744,8 +758,8 @@ function TeacherDashboard({ onOpenWorkbook }: { onOpenWorkbook: (definition: Wor
         <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">Teacher workspace</p>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900">My workbooks</h1>
-            <p className="mt-2 text-sm text-slate-600">Create activities, invite learners, and review returned work.</p>
+            <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900">Workbook sessions</h1>
+            <p className="mt-2 text-sm text-slate-600">Run activities with separate join codes, learners, and responses for each class.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Link to="/builder" className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-500"><Plus className="h-4 w-4" />Create workbook</Link>
@@ -761,8 +775,8 @@ function TeacherDashboard({ onOpenWorkbook }: { onOpenWorkbook: (definition: Wor
       {workbooks.length === 0 ? (
         <section className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center">
           <BookOpen className="mx-auto h-10 w-10 text-slate-400" />
-          <h2 className="mt-4 text-xl font-bold text-slate-900">No published workbooks yet</h2>
-          <p className="mt-2 text-sm text-slate-600">Build your first activity, then use Publish &amp; invite.</p>
+          <h2 className="mt-4 text-xl font-bold text-slate-900">No sessions yet</h2>
+          <p className="mt-2 text-sm text-slate-600">Build your first activity, then start a session to create a learner join code.</p>
           <Link to="/builder" className="mt-6 inline-flex rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white">Create workbook</Link>
         </section>
       ) : (
@@ -780,9 +794,9 @@ function TeacherDashboard({ onOpenWorkbook }: { onOpenWorkbook: (definition: Wor
               <article key={workbook.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <p className={`text-xs font-semibold uppercase tracking-[0.15em] ${workbook.status === 'archived' ? 'text-slate-500' : 'text-blue-700'}`}>{workbook.status === 'archived' ? 'Closed' : workbook.status}</p>
+                    <p className={`text-xs font-semibold uppercase tracking-[0.15em] ${workbook.status === 'archived' ? 'text-slate-500' : 'text-blue-700'}`}>{workbook.status === 'archived' ? 'Session ended' : 'Live session'}</p>
                     <h2 className="mt-1 text-xl font-bold text-slate-900">{workbook.title}</h2>
-                    <p className="mt-1 text-xs text-slate-500">Published {new Date(workbook.created_at).toLocaleDateString()}</p>
+                    <p className="mt-1 text-xs text-slate-500">Started {new Date(workbook.created_at).toLocaleString()}</p>
                   </div>
                   <span className="rounded-lg bg-slate-100 px-3 py-2 font-mono text-sm font-bold tracking-[0.14em] text-slate-800">{workbook.public_code}</span>
                 </div>
@@ -833,11 +847,12 @@ function TeacherDashboard({ onOpenWorkbook }: { onOpenWorkbook: (definition: Wor
                   <Link to={`/teacher/workbooks/${workbook.id}/report`} className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white"><BarChart3 className="h-4 w-4" />View responses</Link>
                   {workbook.status === 'published' && <button type="button" onClick={() => void copyInvite(workbook)} disabled={workingWorkbookId === workbook.id} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 disabled:opacity-50"><Copy className="h-4 w-4" />{copiedCode === workbook.public_code ? 'Link copied' : 'Copy invite'}</button>}
                   <button type="button" onClick={() => { onOpenWorkbook(workbook.definition); navigate('/builder') }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700">Open in builder</button>
+                  <button type="button" onClick={() => void handleRunNewSession(workbook)} disabled={workingWorkbookId === workbook.id} className="inline-flex items-center gap-2 rounded-lg border border-blue-200 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50"><Play className="h-4 w-4" />Run again</button>
                   <button type="button" onClick={() => void handleWorkbookStatus(workbook, workbook.status === 'archived' ? 'published' : 'archived')} disabled={workingWorkbookId === workbook.id} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
                     {workbook.status === 'archived' ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
-                    {workbook.status === 'archived' ? 'Reopen' : 'Close'}
+                    {workbook.status === 'archived' ? 'Reopen session' : 'End session'}
                   </button>
-                  <button type="button" onClick={() => void handleDeleteWorkbook(workbook, responses.length)} disabled={workingWorkbookId === workbook.id} className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"><Trash2 className="h-4 w-4" />Delete</button>
+                  <button type="button" onClick={() => void handleDeleteWorkbook(workbook, responses.length)} disabled={workingWorkbookId === workbook.id} className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"><Trash2 className="h-4 w-4" />Delete session</button>
                 </div>
               </article>
             )
@@ -1456,8 +1471,9 @@ function SystemGuidePage() {
           <ul className="mt-4 space-y-3 text-sm text-slate-600">
             <li>Builds interactive worksheets from structured JSON.</li>
             <li>Supports sequential or free navigation through pages.</li>
-            <li>Captures student responses and persists autosave sessions.</li>
-            <li>Lets teachers sign in, publish a workbook, and share an eight-character join code or direct link.</li>
+            <li>Captures student responses and persists autosaved learner progress.</li>
+            <li>Lets teachers start separate classroom sessions from the same workbook, each with its own eight-character join code and response set.</li>
+            <li>Sessions can be ended, reopened, deleted, or run again without mixing results from different groups.</li>
             <li>Lets learners join without an account, autosave online, and submit directly to the workbook owner.</li>
             <li>Exports worksheet definitions and response JSON.</li>
             <li>Can export the learner JSON automatically on Finish and show a teacher-authored completion popup.</li>
@@ -6057,18 +6073,18 @@ function BuilderPage({
     setPublishedDefinitionJson(null)
     setShareCopied(false)
     if (!user) {
-      setPublishError('Sign in with a teacher account before publishing.')
+      setPublishError('Sign in with a teacher account before starting a session.')
       return
     }
     if (!definitionToPublish.title.trim() || definitionToPublish.pages.length === 0) {
-      setPublishError('Add a title and at least one page before publishing.')
+      setPublishError('Add a title and at least one page before starting a session.')
       return
     }
     const unanswerableBlocks = getUnanswerableRequiredBlocks(definitionToPublish)
     if (unanswerableBlocks.length > 0) {
       const labels = unanswerableBlocks.slice(0, 3).map((block) => getBlockDisplayLabel(block))
       const remainingCount = unanswerableBlocks.length - labels.length
-      setPublishError(`Required blocks need answerable choices before publishing: ${labels.join(', ')}${remainingCount > 0 ? ` and ${remainingCount} more` : ''}.`)
+      setPublishError(`Required blocks need answerable choices before starting a session: ${labels.join(', ')}${remainingCount > 0 ? ` and ${remainingCount} more` : ''}.`)
       return
     }
 
@@ -6078,7 +6094,7 @@ function BuilderPage({
       setPublishedWorkbook(workbook)
       setPublishedDefinitionJson(definitionToPublishJson)
     } catch (error) {
-      setPublishError(error instanceof Error ? error.message : 'The workbook could not be published. Please try again.')
+      setPublishError(error instanceof Error ? error.message : 'The session could not be started. Please try again.')
     } finally {
       setPublishing(false)
     }
@@ -6198,7 +6214,7 @@ Make the language concise and appropriate for the learners. Do not include Markd
             Load JSON
           </button>
           <Link to="/preview" className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm hover:border-slate-400"><Eye className="h-3.5 w-3.5" />Preview</Link>
-          <button type="button" onClick={() => void handlePublish()} disabled={publishing || authLoading} className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-lg bg-emerald-700 px-3 text-xs font-semibold text-white shadow-sm hover:bg-emerald-600 disabled:opacity-60"><CloudUpload className="h-3.5 w-3.5" />{publishing ? 'Publishing…' : 'Publish & invite'}</button>
+          <button type="button" onClick={() => void handlePublish()} disabled={publishing || authLoading} className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-lg bg-emerald-700 px-3 text-xs font-semibold text-white shadow-sm hover:bg-emerald-600 disabled:opacity-60"><CloudUpload className="h-3.5 w-3.5" />{publishing ? 'Starting…' : 'Start session'}</button>
           <button
             onClick={() => {
               const blob = new Blob([JSON.stringify(definition, null, 2)], { type: 'application/json' })
@@ -6222,7 +6238,7 @@ Make the language concise and appropriate for the learners. Do not include Markd
           {publishCardState === 'published' && publishedWorkbook ? (
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Published and ready to share</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Session live and ready to share</p>
                 <h2 className="mt-1 text-xl font-bold text-slate-900">Invite learners to {publishedWorkbook.title}</h2>
                 <div className="mt-3 flex flex-wrap items-center gap-3">
                   <span className="rounded-lg border border-emerald-300 bg-white px-4 py-2 font-mono text-lg font-bold tracking-[0.18em] text-emerald-900">{publishedWorkbook.public_code}</span>
@@ -6234,11 +6250,11 @@ Make the language concise and appropriate for the learners. Do not include Markd
           ) : publishCardState === 'unpublished' && publishedWorkbook ? (
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div className="text-amber-900">
-                <p className="text-xs font-semibold uppercase tracking-[0.16em]">Unpublished changes</p>
-                <h2 className="mt-1 text-xl font-bold">Republish to update learners</h2>
-                <p className="mt-2 text-sm">Learners still see the last published version of {publishedWorkbook.title}.</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em]">Changes made after session started</p>
+                <h2 className="mt-1 text-xl font-bold">Start a new session to use these changes</h2>
+                <p className="mt-2 text-sm">The existing session keeps its original workbook so current learners are not disrupted.</p>
               </div>
-              <button type="button" onClick={() => void handlePublish()} disabled={publishing || authLoading} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-amber-500 disabled:opacity-60"><CloudUpload className="h-4 w-4" />{publishing ? 'Publishing…' : 'Republish'}</button>
+              <button type="button" onClick={() => void handlePublish()} disabled={publishing || authLoading} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-amber-500 disabled:opacity-60"><CloudUpload className="h-4 w-4" />{publishing ? 'Starting…' : 'Start updated session'}</button>
             </div>
           ) : (
             <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-amber-900">
