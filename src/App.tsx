@@ -8,6 +8,8 @@ import TextAlign from '@tiptap/extension-text-align'
 import { Wheel as CanvasWheel } from 'spin-wheel'
 import {
   AlignLeft,
+  Archive,
+  ArchiveRestore,
   ArrowLeft,
   BadgeCheck,
   BookOpen,
@@ -42,6 +44,7 @@ import {
   Table2,
   TextCursorInput,
   TextQuote,
+  Trash2,
   ToggleLeft,
   Upload,
   UserPlus,
@@ -68,7 +71,7 @@ import { formatDocumentTitle, getRouteDocumentTitle } from './lib/documentTitle'
 import { updateBlockConfigWithOptionReferences } from './lib/optionReferenceIntegrity'
 import { isResponseJsonExportEnabled, isResponsePdfExportEnabled, shouldAutosaveOnlineResponse } from './lib/worksheetSettings'
 import { buildResponseIdStorageKey, exportResponseJson, getDefaultResponseId, getStoredSessionCreatedAt, loadSession, saveSession } from './lib/storage'
-import { getPublishedWorksheetJoinErrorMessage, listOwnedWorksheets, listResponseRows, listSubmittedResponses, loadOwnedWorksheet, loadParticipantResponse, loadPublishedWorksheet, publishWorksheet, saveOnlineResponse, submitOnlineResponse, type OnlineResponseRow, type OnlineWorksheetRow } from './lib/onlineRepository'
+import { deleteOwnedWorksheet, getPublishedWorksheetJoinErrorMessage, listOwnedWorksheets, listResponseRows, listSubmittedResponses, loadOwnedWorksheet, loadParticipantResponse, loadPublishedWorksheet, publishWorksheet, saveOnlineResponse, setOwnedWorksheetStatus, submitOnlineResponse, type OnlineResponseRow, type OnlineWorksheetRow } from './lib/onlineRepository'
 import { normalizeRandomizerAnimationDuration, selectRandomItem, shuffleRandomizerItems } from './lib/randomizer'
 import { sanitizeRichTextHtml } from './lib/richTextSanitizer'
 import {
@@ -621,6 +624,7 @@ function TeacherDashboard({ onOpenWorkbook }: { onOpenWorkbook: (definition: Wor
   const [refreshKey, setRefreshKey] = useState(0)
   const [activityNow, setActivityNow] = useState(() => Date.now())
   const [copiedCode, setCopiedCode] = useState('')
+  const [workingWorkbookId, setWorkingWorkbookId] = useState('')
   const hasLoadedDashboard = useRef(false)
 
   useEffect(() => {
@@ -676,6 +680,44 @@ function TeacherDashboard({ onOpenWorkbook }: { onOpenWorkbook: (definition: Wor
   const handleSignOut = async () => {
     await signOut()
     navigate('/')
+  }
+
+  const handleWorkbookStatus = async (workbook: OnlineWorksheetRow, nextStatus: 'published' | 'archived') => {
+    const isClosing = nextStatus === 'archived'
+    const prompt = isClosing
+      ? `Close “${workbook.title}”? Learners will no longer be able to join with its code, but responses will be kept.`
+      : `Reopen “${workbook.title}”? Its existing join code will work again.`
+    if (!window.confirm(prompt)) return
+    setWorkingWorkbookId(workbook.id)
+    setError('')
+    try {
+      const updated = await setOwnedWorksheetStatus(workbook.id, nextStatus)
+      setWorkbooks((current) => current.map((item) => item.id === workbook.id ? updated : item))
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : `The workbook could not be ${isClosing ? 'closed' : 'reopened'}.`)
+    } finally {
+      setWorkingWorkbookId('')
+    }
+  }
+
+  const handleDeleteWorkbook = async (workbook: OnlineWorksheetRow, responseCount: number) => {
+    const responseWarning = responseCount > 0 ? ` and its ${responseCount} learner response${responseCount === 1 ? '' : 's'}` : ''
+    if (!window.confirm(`Permanently delete “${workbook.title}”${responseWarning}? This cannot be undone.`)) return
+    setWorkingWorkbookId(workbook.id)
+    setError('')
+    try {
+      await deleteOwnedWorksheet(workbook.id)
+      setWorkbooks((current) => current.filter((item) => item.id !== workbook.id))
+      setResponsesByWorkbook((current) => {
+        const next = { ...current }
+        delete next[workbook.id]
+        return next
+      })
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'The workbook could not be deleted.')
+    } finally {
+      setWorkingWorkbookId('')
+    }
   }
 
   if (authLoading || loading) {
@@ -737,7 +779,7 @@ function TeacherDashboard({ onOpenWorkbook }: { onOpenWorkbook: (definition: Wor
               <article key={workbook.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.15em] text-blue-700">{workbook.status}</p>
+                    <p className={`text-xs font-semibold uppercase tracking-[0.15em] ${workbook.status === 'archived' ? 'text-slate-500' : 'text-blue-700'}`}>{workbook.status === 'archived' ? 'Closed' : workbook.status}</p>
                     <h2 className="mt-1 text-xl font-bold text-slate-900">{workbook.title}</h2>
                     <p className="mt-1 text-xs text-slate-500">Published {new Date(workbook.created_at).toLocaleDateString()}</p>
                   </div>
@@ -788,8 +830,13 @@ function TeacherDashboard({ onOpenWorkbook }: { onOpenWorkbook: (definition: Wor
 
                 <div className="mt-5 flex flex-wrap gap-2 border-t border-slate-100 pt-4">
                   <Link to={`/teacher/workbooks/${workbook.id}/report`} className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white"><BarChart3 className="h-4 w-4" />View responses</Link>
-                  <button type="button" onClick={() => void copyInvite(workbook)} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700"><Copy className="h-4 w-4" />{copiedCode === workbook.public_code ? 'Link copied' : 'Copy invite'}</button>
+                  {workbook.status === 'published' && <button type="button" onClick={() => void copyInvite(workbook)} disabled={workingWorkbookId === workbook.id} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 disabled:opacity-50"><Copy className="h-4 w-4" />{copiedCode === workbook.public_code ? 'Link copied' : 'Copy invite'}</button>}
                   <button type="button" onClick={() => { onOpenWorkbook(workbook.definition); navigate('/builder') }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700">Open in builder</button>
+                  <button type="button" onClick={() => void handleWorkbookStatus(workbook, workbook.status === 'archived' ? 'published' : 'archived')} disabled={workingWorkbookId === workbook.id} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                    {workbook.status === 'archived' ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
+                    {workbook.status === 'archived' ? 'Reopen' : 'Close'}
+                  </button>
+                  <button type="button" onClick={() => void handleDeleteWorkbook(workbook, responses.length)} disabled={workingWorkbookId === workbook.id} className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"><Trash2 className="h-4 w-4" />Delete</button>
                 </div>
               </article>
             )

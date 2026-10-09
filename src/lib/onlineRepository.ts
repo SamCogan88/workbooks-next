@@ -159,6 +159,39 @@ export async function loadOwnedWorksheet(worksheetId: string) {
   return data
 }
 
+async function requirePermanentTeacher() {
+  const client = requireSupabase()
+  const { data: userData, error: userError } = await client.auth.getUser()
+  if (userError) throw userError
+  if (!userData.user || userData.user.is_anonymous) throw new Error('A permanent teacher account is required.')
+  return { client, user: userData.user }
+}
+
+export async function setOwnedWorksheetStatus(worksheetId: string, status: 'published' | 'archived') {
+  const { client, user } = await requirePermanentTeacher()
+  const { data, error } = await client
+    .from('worksheets')
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq('id', worksheetId)
+    .eq('owner_id', user.id)
+    .select()
+    .single<OnlineWorksheetRow>()
+
+  if (error) throw error
+  return data
+}
+
+export async function deleteOwnedWorksheet(worksheetId: string) {
+  const { client, user } = await requirePermanentTeacher()
+  const { error } = await client
+    .from('worksheets')
+    .delete()
+    .eq('id', worksheetId)
+    .eq('owner_id', user.id)
+
+  if (error) throw error
+}
+
 export async function listSubmittedResponseRows(worksheetId: string) {
   const client = requireSupabase()
   const rows: OnlineResponseRow[] = []

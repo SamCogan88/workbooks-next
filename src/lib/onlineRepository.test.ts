@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ensureAnonymousLearnerSession, getPublishedWorksheetJoinErrorMessage, listResponseRows, listSubmittedResponseRows, loadPublishedWorksheet, PublishedWorksheetLoadError, saveOnlineResponse, uniqueSubmittedResponseRows, type OnlineResponseRow } from './onlineRepository'
+import { deleteOwnedWorksheet, ensureAnonymousLearnerSession, getPublishedWorksheetJoinErrorMessage, listResponseRows, listSubmittedResponseRows, loadPublishedWorksheet, PublishedWorksheetLoadError, saveOnlineResponse, setOwnedWorksheetStatus, uniqueSubmittedResponseRows, type OnlineResponseRow } from './onlineRepository'
 import { requireSupabase } from './supabase'
 import type { WorksheetResponse } from './types'
 
@@ -126,6 +126,41 @@ describe('online worksheet repository', () => {
     expect(getPublishedWorksheetJoinErrorMessage(new PublishedWorksheetLoadError('not-found', 'missing'))).toContain('could not find')
     expect(getPublishedWorksheetJoinErrorMessage(new PublishedWorksheetLoadError('configuration', 'migration missing'))).toContain('needs an update')
     expect(getPublishedWorksheetJoinErrorMessage(new TypeError('Failed to fetch'))).toContain('connection')
+  })
+
+  it('closes and reopens only the signed-in teacher owner workbook', async () => {
+    const archivedWorkbook = { id: 'worksheet-id', owner_id: 'teacher-id', status: 'archived' }
+    const builder = {
+      update: vi.fn(() => builder),
+      eq: vi.fn(() => builder),
+      select: vi.fn(() => builder),
+      single: vi.fn().mockResolvedValue({ data: archivedWorkbook, error: null }),
+    }
+    vi.mocked(requireSupabase).mockReturnValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'teacher-id', is_anonymous: false } }, error: null }) },
+      from: vi.fn().mockReturnValue(builder),
+    } as any)
+
+    await expect(setOwnedWorksheetStatus('worksheet-id', 'archived')).resolves.toBe(archivedWorkbook)
+    expect(builder.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'archived' }))
+    expect(builder.eq).toHaveBeenCalledWith('id', 'worksheet-id')
+    expect(builder.eq).toHaveBeenCalledWith('owner_id', 'teacher-id')
+  })
+
+  it('deletes only the signed-in teacher owner workbook', async () => {
+    const builder = {
+      error: null,
+      delete: vi.fn(() => builder),
+      eq: vi.fn(() => builder),
+    }
+    vi.mocked(requireSupabase).mockReturnValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'teacher-id', is_anonymous: false } }, error: null }) },
+      from: vi.fn().mockReturnValue(builder),
+    } as any)
+
+    await expect(deleteOwnedWorksheet('worksheet-id')).resolves.toBeUndefined()
+    expect(builder.eq).toHaveBeenCalledWith('id', 'worksheet-id')
+    expect(builder.eq).toHaveBeenCalledWith('owner_id', 'teacher-id')
   })
 })
 
