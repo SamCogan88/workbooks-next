@@ -1563,6 +1563,39 @@ function formatTimerValue(seconds: number) {
   return `${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
 }
 
+export function OnlineSubmissionComplete({ title, completionMessage, submittedAt }: { title: string; completionMessage: string; submittedAt?: string | null }) {
+  const submittedTime = submittedAt ? new Date(submittedAt) : null
+  const hasValidSubmittedTime = submittedTime && !Number.isNaN(submittedTime.getTime())
+
+  return (
+    <main className="mx-auto flex min-h-[calc(100vh-49px)] max-w-3xl items-center px-5 py-12">
+      <section className="w-full rounded-3xl border border-emerald-200 bg-white p-8 text-center shadow-sm sm:p-12">
+        <span className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+          <BadgeCheck className="h-11 w-11" aria-hidden="true" />
+        </span>
+        <p className="mt-6 text-xs font-bold uppercase tracking-[0.2em] text-emerald-700">Submitted successfully</p>
+        <h1 className="mt-3 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">Your work is complete</h1>
+        <p className="mt-3 text-lg font-semibold text-slate-800">{title}</p>
+        <p className="mx-auto mt-4 max-w-xl text-sm leading-6 text-slate-600">{completionMessage}</p>
+        {hasValidSubmittedTime && (
+          <p className="mt-4 text-sm text-slate-500">Submitted {submittedTime.toLocaleString()}</p>
+        )}
+        <div className="mx-auto mt-7 max-w-lg rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+          Your response is locked after submission, so it cannot be accidentally submitted or changed again.
+        </div>
+        <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
+          <Link to="/" className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800">
+            Return home
+          </Link>
+          <Link to="/join" className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:border-slate-400 hover:bg-slate-50">
+            Join another activity
+          </Link>
+        </div>
+      </section>
+    </main>
+  )
+}
+
 function WorksheetPlayer({ definition, previewMode = false, onlineWorksheetId, publicCode }: { definition: WorksheetDefinition; previewMode?: boolean; onlineWorksheetId?: string; publicCode?: string }) {
   const navigate = useNavigate()
   const responseIdStorageKey = buildResponseIdStorageKey(definition.id, definition.version, onlineWorksheetId)
@@ -1886,7 +1919,7 @@ ${labels.map((label) => `• ${label}`).join('\n')}${remainingCount > 0 ? `\nand
         const submitted = await submitOnlineResponse(saved.id)
         setSubmittedOnlineResponse(submitted)
         setStatus('Complete')
-        setShowCompletionDialog(true)
+        setShowCompletionDialog(false)
       } catch {
         setExportError("We couldn't submit your response. Your work is still saved on this device; check your connection and try again.")
         setStatus('Submission failed')
@@ -2171,6 +2204,16 @@ ${labels.map((label) => `• ${label}`).join('\n')}${remainingCount > 0 ? `\nand
       <main className="mx-auto max-w-4xl px-6 py-12 text-slate-700">
         This worksheet has no pages.
       </main>
+    )
+  }
+
+  if (onlineWorksheetId && submittedOnlineResponse) {
+    return (
+      <OnlineSubmissionComplete
+        title={definition.title}
+        completionMessage={completionMessage}
+        submittedAt={submittedOnlineResponse.submitted_at}
+      />
     )
   }
 

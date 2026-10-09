@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { createElement, Fragment, useState } from 'react'
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import App, { ModalOverlay, OnlineJoinPageRoute, QuadrantMiniChart, SynthesisViewer, renderBlock } from './App'
+import App, { ModalOverlay, OnlineJoinPageRoute, OnlineSubmissionComplete, QuadrantMiniChart, SynthesisViewer, renderBlock } from './App'
 import { getPublishCardState } from './lib/builderPublishState'
 import { aggregateContinuum, aggregateDecisionMatrix, buildStudentSynthesis } from './lib/aggregation'
 import { createBuilderId } from './lib/builderIds'
@@ -81,6 +81,27 @@ describe('online workbook join routing', () => {
 })
 
 afterEach(cleanup)
+
+describe('online submission completion', () => {
+  it('replaces the worksheet with an unambiguous submission receipt', () => {
+    render(createElement(
+      MemoryRouter,
+      null,
+      createElement(OnlineSubmissionComplete, {
+        title: 'Mars Colony Design',
+        completionMessage: 'Your response has been sent to your teacher.',
+        submittedAt: '2026-10-10T09:30:00.000Z',
+      }),
+    ))
+
+    expect(screen.getByRole('heading', { name: 'Your work is complete' })).toBeTruthy()
+    expect(screen.getByText('Mars Colony Design')).toBeTruthy()
+    expect(screen.getByText(/cannot be accidentally submitted or changed again/i)).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Return home' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Join another activity' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Submit' })).toBeNull()
+  })
+})
 
 describe('document titles', () => {
   it('uses the app name for the shell title', () => {
