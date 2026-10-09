@@ -112,6 +112,17 @@ export function isConditionSourceBlock(block: WorksheetBlock) {
   return block.type !== 'hotspot'
 }
 
+export function getBranchConditionSourceBlockIds(definition: WorksheetDefinition) {
+  const sourceIds = new Set<string>()
+  definition.pages.forEach((page) => {
+    if (page.condition?.blockId) sourceIds.add(page.condition.blockId)
+    page.blocks.forEach((block) => {
+      if (block.condition?.blockId) sourceIds.add(block.condition.blockId)
+    })
+  })
+  return sourceIds
+}
+
 function getConditionExpectedValues(condition: WorksheetCondition, sourceBlock?: WorksheetBlock) {
   const expected = conditionPrimitives(condition.value)
   if (!sourceBlock) return expected

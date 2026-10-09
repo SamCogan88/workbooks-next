@@ -81,6 +81,7 @@ import {
   getFillBlankCorrectAnswerPatch,
   formatQuizPercent,
   getBoardPresetColumns,
+  getBranchConditionSourceBlockIds,
   canNavigateToVisiblePage,
   getConditionOptions,
   getImageDisplayConfig,
@@ -1786,13 +1787,20 @@ function WorksheetPlayer({ definition, previewMode = false, onlineWorksheetId, p
       ? 'Your response JSON has been downloaded. Upload it wherever your teacher asked you to submit your work.'
       : 'Your response is complete. You can now close this page.'
   }, [definition, onlineWorksheetId])
+  const branchConditionSourceBlockIds = useMemo(() => getBranchConditionSourceBlockIds(definition), [definition])
   const missingRequiredBlocks = useMemo(
-    () => (currentPage ? getMissingRequiredBlocks(currentPage, responses, definition) : []),
-    [currentPage, definition, responses],
+    () => {
+      const missing = currentPage ? getMissingRequiredBlocks(currentPage, responses, definition) : []
+      return previewMode ? missing.filter((block) => branchConditionSourceBlockIds.has(block.id)) : missing
+    },
+    [branchConditionSourceBlockIds, currentPage, definition, previewMode, responses],
   )
   const missingRequiredBlockLocations = useMemo(
-    () => getMissingRequiredBlockLocations(definition, responses),
-    [definition, responses],
+    () => {
+      const missing = getMissingRequiredBlockLocations(definition, responses)
+      return previewMode ? missing.filter((location) => branchConditionSourceBlockIds.has(location.block.id)) : missing
+    },
+    [branchConditionSourceBlockIds, definition, previewMode, responses],
   )
   const canLeaveCurrentPage = missingRequiredBlocks.length === 0
   const missingRequiredBlockIds = useMemo(() => new Set(missingRequiredBlocks.map((block) => block.id)), [missingRequiredBlocks])

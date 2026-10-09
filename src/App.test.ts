@@ -13,7 +13,7 @@ import { updateBlockConfigWithOptionReferences } from './lib/optionReferenceInte
 import { isResponseJsonExportEnabled, isResponsePdfExportEnabled, shouldAutosaveOnlineResponse } from './lib/worksheetSettings'
 import { loadPublishedWorksheet } from './lib/onlineRepository'
 import { getStoredSessionCreatedAt, loadSession, saveSession } from './lib/storage'
-import { addMatchingPairConfig, canNavigateToVisiblePage, formatQuizPercent, getAdjacentVisiblePageIndex, getBoardPresetColumns, getConditionOptions, getDefaultBlockConfig, getDefaultPageTimer, getFillBlankCorrectAnswerPatch, getImageDisplayConfig, getMissingRequiredBlockLocations, getMissingRequiredBlocks, getQuizSummary, getUnanswerableRequiredBlocks, getVisibleBlocks, getVisiblePages, getVisiblePagesWithBlocks, getWorksheetResponseImportError, hasMeaningfulResponseValue, isConditionMet, isConditionSourceBlock, isRequiredBlockSatisfied, isWorksheetDefinition, normalizeRichTextResponse, reconcileCategorizeResponse, reconcileRankingResponse, reconcileWorksheetResponses, reorderBlocks, sanitizeWorksheetDefinition } from './lib/worksheetLogic'
+import { addMatchingPairConfig, canNavigateToVisiblePage, formatQuizPercent, getAdjacentVisiblePageIndex, getBoardPresetColumns, getBranchConditionSourceBlockIds, getConditionOptions, getDefaultBlockConfig, getDefaultPageTimer, getFillBlankCorrectAnswerPatch, getImageDisplayConfig, getMissingRequiredBlockLocations, getMissingRequiredBlocks, getQuizSummary, getUnanswerableRequiredBlocks, getVisibleBlocks, getVisiblePages, getVisiblePagesWithBlocks, getWorksheetResponseImportError, hasMeaningfulResponseValue, isConditionMet, isConditionSourceBlock, isRequiredBlockSatisfied, isWorksheetDefinition, normalizeRichTextResponse, reconcileCategorizeResponse, reconcileRankingResponse, reconcileWorksheetResponses, reorderBlocks, sanitizeWorksheetDefinition } from './lib/worksheetLogic'
 
 vi.mock('./lib/onlineRepository', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./lib/onlineRepository')>()
@@ -464,6 +464,22 @@ describe('conditional visibility', () => {
   it('filters unsupported hotspot blocks from conditional sources', () => {
     expect(isConditionSourceBlock({ id: 'spot', type: 'hotspot' } as any)).toBe(false)
     expect(isConditionSourceBlock({ id: 'rating', type: 'rating' } as any)).toBe(true)
+  })
+
+  it('identifies only blocks that actually control a branch', () => {
+    expect([...getBranchConditionSourceBlockIds(definition)]).toEqual(['lms'])
+    const blockBranchDefinition = {
+      ...definition,
+      pages: [{
+        id: 'choice',
+        title: 'Choose',
+        blocks: [
+          { id: 'lms', type: 'singleSelect' },
+          { id: 'detail', type: 'shortText', condition: { blockId: 'lms', operator: 'equals', value: 'Teams' } },
+        ],
+      }],
+    } as any
+    expect([...getBranchConditionSourceBlockIds(blockBranchDefinition)]).toEqual(['lms'])
   })
 
   it('ignores hidden required blocks and skips hidden pages in navigation and progress inputs', () => {
