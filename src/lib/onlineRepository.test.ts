@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ensureAnonymousLearnerSession, getPublishedWorksheetJoinErrorMessage, listSubmittedResponseRows, loadPublishedWorksheet, PublishedWorksheetLoadError, saveOnlineResponse, uniqueSubmittedResponseRows, type OnlineResponseRow } from './onlineRepository'
+import { ensureAnonymousLearnerSession, getPublishedWorksheetJoinErrorMessage, listResponseRows, listSubmittedResponseRows, loadPublishedWorksheet, PublishedWorksheetLoadError, saveOnlineResponse, uniqueSubmittedResponseRows, type OnlineResponseRow } from './onlineRepository'
 import { requireSupabase } from './supabase'
 import type { WorksheetResponse } from './types'
 
@@ -257,6 +257,30 @@ describe('online repository submitted responses', () => {
 
     expect(rows).toHaveLength(1002)
     expect(ranges).toEqual([[0, 999], [1000, 1999]])
+  })
+
+  it('loads draft and submitted rows for the teacher activity view', async () => {
+    const draft = createRow('draft-row')
+    draft.status = 'draft'
+    draft.submitted_at = null
+    const submitted = createRow('submitted-row')
+    const client = {
+      from: vi.fn(() => {
+        const builder = {
+          select: vi.fn(() => builder),
+          eq: vi.fn(() => builder),
+          order: vi.fn(() => builder),
+          range: vi.fn().mockResolvedValue({ data: [draft, submitted], error: null }),
+        }
+        return builder
+      }),
+    }
+    vi.mocked(requireSupabase).mockReturnValue(client as any)
+
+    const rows = await listResponseRows('worksheet-1')
+
+    expect(rows).toEqual([draft, submitted])
+    expect(client.from).toHaveBeenCalledWith('responses')
   })
 
   it('keeps the newest row when online answers reuse a response id', () => {

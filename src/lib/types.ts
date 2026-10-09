@@ -75,6 +75,13 @@ export interface WorksheetResponse {
   updatedAt: string
   group?: string
   subject?: string
+  progress?: {
+    pageIndex: number
+    pageNumber: number
+    totalPages: number
+    pageId?: string
+    pageTitle?: string
+  }
   responses: Record<string, any>
 }
 

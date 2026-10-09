@@ -68,7 +68,7 @@ import { formatDocumentTitle, getRouteDocumentTitle } from './lib/documentTitle'
 import { updateBlockConfigWithOptionReferences } from './lib/optionReferenceIntegrity'
 import { isResponseJsonExportEnabled, isResponsePdfExportEnabled, shouldAutosaveOnlineResponse } from './lib/worksheetSettings'
 import { buildResponseIdStorageKey, exportResponseJson, getDefaultResponseId, getStoredSessionCreatedAt, loadSession, saveSession } from './lib/storage'
-import { getPublishedWorksheetJoinErrorMessage, listOwnedWorksheets, listSubmittedResponseRows, listSubmittedResponses, loadOwnedWorksheet, loadParticipantResponse, loadPublishedWorksheet, publishWorksheet, saveOnlineResponse, submitOnlineResponse, type OnlineResponseRow, type OnlineWorksheetRow } from './lib/onlineRepository'
+import { getPublishedWorksheetJoinErrorMessage, listOwnedWorksheets, listResponseRows, listSubmittedResponses, loadOwnedWorksheet, loadParticipantResponse, loadPublishedWorksheet, publishWorksheet, saveOnlineResponse, submitOnlineResponse, type OnlineResponseRow, type OnlineWorksheetRow } from './lib/onlineRepository'
 import { normalizeRandomizerAnimationDuration, selectRandomItem, shuffleRandomizerItems } from './lib/randomizer'
 import { sanitizeRichTextHtml } from './lib/richTextSanitizer'
 import {
@@ -619,7 +619,18 @@ function TeacherDashboard({ onOpenWorkbook }: { onOpenWorkbook: (definition: Wor
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
+  const [activityNow, setActivityNow] = useState(() => Date.now())
   const [copiedCode, setCopiedCode] = useState('')
+  const hasLoadedDashboard = useRef(false)
+
+  useEffect(() => {
+    if (!user) return
+    const intervalId = window.setInterval(() => {
+      setActivityNow(Date.now())
+      setRefreshKey((value) => value + 1)
+    }, 30_000)
+    return () => window.clearInterval(intervalId)
+  }, [user])
 
   useEffect(() => {
     if (authLoading) return
@@ -629,15 +640,16 @@ function TeacherDashboard({ onOpenWorkbook }: { onOpenWorkbook: (definition: Wor
     }
 
     let active = true
-    setLoading(true)
+    if (!hasLoadedDashboard.current) setLoading(true)
     setError('')
     void listOwnedWorksheets().then(async (ownedWorkbooks) => {
       const responseEntries = await Promise.all(ownedWorkbooks.map(async (workbook) => (
-        [workbook.id, await listSubmittedResponseRows(workbook.id)] as const
+        [workbook.id, await listResponseRows(workbook.id)] as const
       )))
       if (!active) return
       setWorkbooks(ownedWorkbooks)
       setResponsesByWorkbook(Object.fromEntries(responseEntries))
+      hasLoadedDashboard.current = true
       setLoading(false)
     }).catch((loadError) => {
       if (!active) return
@@ -694,7 +706,7 @@ function TeacherDashboard({ onOpenWorkbook }: { onOpenWorkbook: (definition: Wor
           </div>
           <div className="flex flex-wrap gap-2">
             <Link to="/builder" className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-500"><Plus className="h-4 w-4" />Create workbook</Link>
-            <button type="button" onClick={() => setRefreshKey((value) => value + 1)} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 hover:border-slate-400"><RefreshCw className="h-4 w-4" />Refresh</button>
+            <button type="button" onClick={() => { setActivityNow(Date.now()); setRefreshKey((value) => value + 1) }} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 hover:border-slate-400"><RefreshCw className="h-4 w-4" />Refresh</button>
             <button type="button" onClick={() => void handleSignOut()} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 hover:border-slate-400"><LogOut className="h-4 w-4" />Sign out</button>
           </div>
         </div>
@@ -714,6 +726,13 @@ function TeacherDashboard({ onOpenWorkbook }: { onOpenWorkbook: (definition: Wor
         <section className="mt-6 grid gap-4 md:grid-cols-2">
           {workbooks.map((workbook) => {
             const responses = responsesByWorkbook[workbook.id] || []
+            const submittedResponses = responses.filter((response) => response.status === 'submitted')
+            const draftResponses = responses.filter((response) => response.status === 'draft')
+            const activeCutoff = activityNow - 150_000
+            const activeResponses = draftResponses.filter((response) => {
+              const updatedAt = new Date(response.updated_at || response.answers.updatedAt).getTime()
+              return Number.isFinite(updatedAt) && updatedAt >= activeCutoff
+            })
             return (
               <article key={workbook.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="flex items-start justify-between gap-4">
@@ -725,26 +744,45 @@ function TeacherDashboard({ onOpenWorkbook }: { onOpenWorkbook: (definition: Wor
                   <span className="rounded-lg bg-slate-100 px-3 py-2 font-mono text-sm font-bold tracking-[0.14em] text-slate-800">{workbook.public_code}</span>
                 </div>
 
-                <div className="mt-5 grid grid-cols-2 gap-3">
+                <div className="mt-5 grid grid-cols-3 gap-3">
+                  <div className="rounded-xl bg-blue-50 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">Active now</p>
+                    <p className="mt-1 text-2xl font-bold text-blue-900">{activeResponses.length}</p>
+                  </div>
+                  <div className="rounded-xl bg-amber-50 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">In progress</p>
+                    <p className="mt-1 text-2xl font-bold text-amber-900">{draftResponses.length}</p>
+                  </div>
                   <div className="rounded-xl bg-emerald-50 p-3">
                     <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Submitted</p>
-                    <p className="mt-1 text-2xl font-bold text-emerald-900">{responses.length}</p>
-                  </div>
-                  <div className="rounded-xl bg-slate-50 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Pages</p>
-                    <p className="mt-1 text-2xl font-bold text-slate-900">{workbook.definition.pages.length}</p>
+                    <p className="mt-1 text-2xl font-bold text-emerald-900">{submittedResponses.length}</p>
                   </div>
                 </div>
 
-                {responses.length > 0 && (
+                {draftResponses.length > 0 && (
                   <div className="mt-4 space-y-2">
-                    {responses.slice(0, 3).map((response) => (
-                      <div key={response.id} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm">
-                        <span className="font-medium text-slate-700">{response.participant_label || response.answers?.group || response.answers?.subject || 'Anonymous learner'}</span>
-                        <span className="text-xs text-slate-500">{response.submitted_at ? new Date(response.submitted_at).toLocaleString() : 'Submitted'}</span>
-                      </div>
-                    ))}
-                    {responses.length > 3 && <p className="text-xs text-slate-500">And {responses.length - 3} more…</p>}
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Learner progress</p>
+                    {draftResponses.slice(0, 5).map((response, responseIndex) => {
+                      const progress = response.answers?.progress
+                      const pageNumber = Math.max(1, Number(progress?.pageNumber) || 1)
+                      const totalPageCount = Math.max(1, Number(progress?.totalPages) || workbook.definition.pages.length)
+                      const updatedAt = new Date(response.updated_at || response.answers.updatedAt)
+                      const isActive = activeResponses.some((activeResponse) => activeResponse.id === response.id)
+                      return (
+                        <div key={response.id} className="rounded-lg border border-slate-200 px-3 py-2.5 text-sm">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="min-w-0 truncate font-medium text-slate-700">{response.participant_label || response.answers?.group || response.answers?.subject || `Learner ${responseIndex + 1}`}</span>
+                            <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${isActive ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>{isActive ? 'Active now' : `Last seen ${Number.isNaN(updatedAt.getTime()) ? 'earlier' : updatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}</span>
+                          </div>
+                          <div className="mt-2 flex items-center gap-3 text-xs text-slate-500">
+                            <span className="shrink-0">Page {Math.min(pageNumber, totalPageCount)} of {totalPageCount}</span>
+                            <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-200"><span className="block h-full rounded-full bg-blue-500" style={{ width: `${Math.min(100, (pageNumber / totalPageCount) * 100)}%` }} /></span>
+                            {progress?.pageTitle && <span className="max-w-28 truncate" title={progress.pageTitle}>{progress.pageTitle}</span>}
+                          </div>
+                        </div>
+                      )
+                    })}
+                    {draftResponses.length > 5 && <p className="text-xs text-slate-500">And {draftResponses.length - 5} more in progress…</p>}
                   </div>
                 )}
 
@@ -1824,8 +1862,15 @@ ${labels.map((label) => `• ${label}`).join('\n')}${remainingCount > 0 ? `\nand
     updatedAt: new Date().toISOString(),
     group: String(responses['group-name'] || ''),
     subject: String(responses['tool-name'] || responses['subject-name'] || ''),
+    progress: {
+      pageIndex,
+      pageNumber: Math.max(1, currentVisiblePageIndex + 1),
+      totalPages,
+      pageId: currentPage?.id,
+      pageTitle: currentPage?.title,
+    },
     responses: reconcileWorksheetResponses(definition, responses),
-  }), [definition, responseCreatedAt, responseId, responses])
+  }), [currentPage?.id, currentPage?.title, currentVisiblePageIndex, definition, pageIndex, responseCreatedAt, responseId, responses, totalPages])
 
   useEffect(() => {
     if (!onlineWorksheetId || !shouldAutosaveOnlineResponse(definition) || !isSessionHydrated || hasSubmittedOnlineResponse || status === 'Complete' || status === 'Submitting…') return
@@ -1846,6 +1891,17 @@ ${labels.map((label) => `• ${label}`).join('\n')}${remainingCount > 0 ? `\nand
 
     return () => window.clearTimeout(timeoutId)
   }, [buildDocument, definition, hasSubmittedOnlineResponse, isSessionHydrated, onlineWorksheetId, responses, status])
+
+  useEffect(() => {
+    if (!onlineWorksheetId || !isSessionHydrated || hasSubmittedOnlineResponse) return
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return
+      void saveOnlineResponse(onlineWorksheetId, buildDocument(), String(responses['group-name'] || '')).catch(() => {
+        // The normal autosave status already communicates connectivity problems.
+      })
+    }, 60_000)
+    return () => window.clearInterval(intervalId)
+  }, [buildDocument, hasSubmittedOnlineResponse, isSessionHydrated, onlineWorksheetId, responses])
 
   const tryLeaveCurrentPage = () => {
     if (canLeaveCurrentPage) {

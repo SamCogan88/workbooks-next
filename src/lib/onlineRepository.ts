@@ -227,6 +227,28 @@ export async function loadPublishedWorksheet(publicCode: string) {
   return legacyResult.data
 }
 
+export async function listResponseRows(worksheetId: string) {
+  const client = requireSupabase()
+  const rows: OnlineResponseRow[] = []
+
+  for (let offset = 0; ; offset += SUBMITTED_RESPONSES_PAGE_SIZE) {
+    const { data, error } = await client
+      .from('responses')
+      .select('*')
+      .eq('worksheet_id', worksheetId)
+      .order('updated_at', { ascending: false })
+      .range(offset, offset + SUBMITTED_RESPONSES_PAGE_SIZE - 1)
+
+    if (error) throw error
+
+    const page = (data || []) as OnlineResponseRow[]
+    rows.push(...page)
+    if (page.length < SUBMITTED_RESPONSES_PAGE_SIZE) break
+  }
+
+  return uniqueSubmittedResponseRows(rows)
+}
+
 async function loadParticipantResponseForSession(worksheetId: string, participantId: string) {
   const client = requireSupabase()
   const { data, error } = await client
@@ -259,6 +281,7 @@ export async function saveOnlineResponse(worksheetId: string, response: Workshee
       participant_label: participantLabel?.trim() || null,
       answers: response,
       status: 'draft',
+      updated_at: new Date().toISOString(),
     }, { onConflict: 'worksheet_id,participant_id' })
     .select()
     .single<OnlineResponseRow>()
@@ -269,9 +292,10 @@ export async function saveOnlineResponse(worksheetId: string, response: Workshee
 
 export async function submitOnlineResponse(responseId: string) {
   const client = requireSupabase()
+  const submittedAt = new Date().toISOString()
   const { data, error } = await client
     .from('responses')
-    .update({ status: 'submitted' })
+    .update({ status: 'submitted', submitted_at: submittedAt, updated_at: submittedAt })
     .eq('id', responseId)
     .select()
     .single<OnlineResponseRow>()
