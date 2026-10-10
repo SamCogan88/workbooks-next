@@ -908,6 +908,42 @@ describe('worksheet page timer defaults', () => {
 })
 
 describe('student synthesis summary', () => {
+  it('opens a report focused on the learner selected from the session monitor', () => {
+    const definition = {
+      id: 'learner-monitor-report',
+      version: 1,
+      title: 'Learner monitor report',
+      description: 'Checks direct learner report filtering',
+      synthesis: { responseLabelBlockId: 'name' },
+      settings: {
+        navigation: 'sequential',
+        allowPageJumping: false,
+        autosave: true,
+        showProgress: true,
+        exports: { json: true, pdf: true },
+      },
+      pages: [{
+        id: 'reflection',
+        title: 'Reflection',
+        blocks: [
+          { id: 'name', type: 'shortText', label: 'Name' },
+          { id: 'note', type: 'longText', label: 'Reflection' },
+        ],
+      }],
+    } as any
+    const responses = [
+      { responseId: 'alice', responses: { name: 'Alice', note: 'Alice answer' } },
+      { responseId: 'bob', responses: { name: 'Bob', note: 'Bob answer' } },
+    ] as any
+
+    render(createElement(MemoryRouter, null, createElement(SynthesisViewer, { definition, initialMode: 'teacher', initialResponses: responses, initialResponseLabelFilter: 'Alice' })))
+    fireEvent.click(screen.getByRole('button', { name: /Reflection/ }))
+
+    expect((screen.getByRole('combobox', { name: 'Response label' }) as HTMLSelectElement).value).toBe('Alice')
+    expect(screen.getByText('Alice answer')).toBeTruthy()
+    expect(screen.queryByText('Bob answer')).toBeNull()
+  })
+
   it('shows configured choice labels instead of stable option ids in reports and synthesis', () => {
     const definition = {
       id: 'stable-choice-report',
