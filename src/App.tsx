@@ -847,7 +847,8 @@ function TeacherDashboard({ onOpenWorkbook }: { onOpenWorkbook: (definition: Wor
                       const updatedAt = new Date(response.updated_at || response.answers.updatedAt)
                       const isActive = activeResponses.some((activeResponse) => activeResponse.id === response.id)
                       const isSubmitted = response.status === 'submitted'
-                      const learnerLabel = response.participant_label || response.answers?.group || response.answers?.subject || `Learner ${responseIndex + 1}`
+                      const configuredResponseLabel = getResponseLabel(response.answers, workbook.definition)
+                      const learnerLabel = response.participant_label || response.answers?.group || response.answers?.subject || configuredResponseLabel || `Learner ${responseIndex + 1}`
                       const progressPercent = isSubmitted ? 100 : Math.min(100, (pageNumber / totalPageCount) * 100)
                       return (
                         <div key={response.id} className="rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-3 text-sm">
