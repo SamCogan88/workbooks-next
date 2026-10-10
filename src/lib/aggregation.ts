@@ -311,12 +311,13 @@ export function buildStudentSynthesis(groupings: GroupedResponseSet[], radarBloc
 
   const choiceBlock = definition?.pages.flatMap((page) => page.blocks).find((block) => ['verdict', 'singleSelect', 'multipleChoice', 'trueFalse', 'confidence'].includes(block.type))
   if (choiceBlock) {
+    const options = getLabeledConfigItems(choiceBlock.config?.options, 'option')
     const counts = new Map<string, number>()
     allResponses.forEach((response) => {
       const rawValue = response.responses?.[choiceBlock.id]
       const values = Array.isArray(rawValue) ? rawValue : [rawValue]
       values.filter((value) => value !== undefined && value !== null && String(value).trim()).forEach((value) => {
-        const label = String(value)
+        const label = options.find((option) => matchesOptionValue(value, option))?.label || String(value)
         counts.set(label, (counts.get(label) || 0) + 1)
       })
     })

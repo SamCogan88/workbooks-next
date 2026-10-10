@@ -908,6 +908,41 @@ describe('worksheet page timer defaults', () => {
 })
 
 describe('student synthesis summary', () => {
+  it('shows configured choice labels instead of stable option ids in reports and synthesis', () => {
+    const definition = {
+      id: 'stable-choice-report',
+      version: 1,
+      title: 'Stable choice report',
+      description: 'Checks report labels',
+      settings: {
+        navigation: 'sequential',
+        allowPageJumping: false,
+        autosave: true,
+        showProgress: true,
+        exports: { json: true, pdf: true },
+      },
+      pages: [{
+        id: 'reflection',
+        title: 'Reflection',
+        blocks: [{ id: 'status', type: 'singleSelect', label: 'How is it working?', config: { options: [{ id: 'option-1', label: 'Working well' }] } }],
+      }],
+    } as any
+    const responses = [
+      { responseId: 'one', responses: { status: 'option-1' } },
+      { responseId: 'two', responses: { status: 'option-1' } },
+    ] as any
+
+    render(createElement(MemoryRouter, null, createElement(SynthesisViewer, { definition, initialMode: 'teacher', initialResponses: responses })))
+    fireEvent.click(screen.getByRole('button', { name: /Reflection/ }))
+
+    expect(screen.getByText('Working well')).toBeTruthy()
+    expect(screen.queryByText('option-1')).toBeNull()
+
+    const synthesis = buildStudentSynthesis([{ key: 'all', label: 'All responses', responses }], undefined, 'Response group', definition)
+    expect(synthesis.highlights[0]).toContain('“Working well”')
+    expect(synthesis.highlights[0]).not.toContain('option-1')
+  })
+
   it('exposes the active report mode on the segmented toggle', () => {
     const definition = {
       id: 'toggle-test',

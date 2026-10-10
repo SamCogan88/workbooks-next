@@ -4220,7 +4220,7 @@ export function renderBlock(block: WorksheetBlock, responses: Record<string, any
 function formatBlockValue(block: WorksheetBlock, value: any) {
   if (value === undefined || value === null || value === '') return ''
   if (block.type === 'richText') return stripHtml(sanitizeRichTextHtml(String(value)))
-  if (['singleSelect', 'confidence', 'verdict'].includes(block.type)) {
+  if (['singleSelect', 'confidence', 'verdict', 'trueFalse'].includes(block.type)) {
     const option = getLabeledConfigItems(block.config?.options, 'option').find((item) => matchesOptionValue(value, item))
     return option?.label || String(value)
   }
@@ -4456,7 +4456,7 @@ export function SynthesisViewer({ definition, initialMode = 'student', initialRe
     [structure.responseBlocks],
   )
   const verdictFilterOptions = useMemo(
-    () => Array.from(new Set(groupings.flatMap((grouping) => grouping.responses.flatMap((response) => verdictBlocks.map((block) => String(response.responses?.[block.id] || '').trim()).filter(Boolean))))).sort(),
+    () => Array.from(new Set(groupings.flatMap((grouping) => grouping.responses.flatMap((response) => verdictBlocks.map((block) => formatBlockValue(block, response.responses?.[block.id]).trim()).filter(Boolean))))).sort(),
     [groupings, verdictBlocks],
   )
   const responseLabelFilterOptions = useMemo(
@@ -4472,7 +4472,7 @@ export function SynthesisViewer({ definition, initialMode = 'student', initialRe
         const filteredResponses = grouping.responses.filter((response) => {
           const label = responseLabelLookup[response.responseId] || ''
           const matchesLabel = responseLabelFilter === 'all' || label === responseLabelFilter
-          const matchesVerdict = verdictFilter === 'all' || verdictBlocks.some((block) => String(response.responses?.[block.id] || '').trim() === verdictFilter)
+          const matchesVerdict = verdictFilter === 'all' || verdictBlocks.some((block) => formatBlockValue(block, response.responses?.[block.id]).trim() === verdictFilter)
           const matchesSearch = !normalizedSearch
             || grouping.label.toLowerCase().includes(normalizedSearch)
             || label.toLowerCase().includes(normalizedSearch)
@@ -4544,10 +4544,11 @@ export function SynthesisViewer({ definition, initialMode = 'student', initialRe
 
     if (block.type === 'checklist') {
       const items = Array.isArray(value) ? value.filter((item) => hasMeaningfulResponseValue(item)) : []
+      const options = getLabeledConfigItems(block.config?.options, 'option')
       return (
         <div className="mt-2 flex flex-wrap gap-2">
           {items.map((item) => (
-            <span key={`${block.id}-${String(item)}`} className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">{String(item)}</span>
+            <span key={`${block.id}-${String(item)}`} className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">{options.find((option) => matchesOptionValue(item, option))?.label || String(item)}</span>
           ))}
         </div>
       )
@@ -4791,7 +4792,7 @@ export function SynthesisViewer({ definition, initialMode = 'student', initialRe
       entries.forEach(({ label, value }) => {
         const selectedValues = Array.isArray(value) ? value : [value]
         selectedValues
-          .map((item) => String(item).trim())
+          .map((item) => formatBlockValue(block, item).trim())
           .filter(Boolean)
           .forEach((item) => {
             counts.set(item, [...(counts.get(item) || []), label])
